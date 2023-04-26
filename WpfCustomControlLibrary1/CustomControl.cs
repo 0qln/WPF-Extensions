@@ -72,13 +72,13 @@ namespace WpfCustomControls {
         private DropDownMenu ?parentMenu;
         private MenuOption? parentOption;
         private FrameworkElement ?parentElement;
-        private Point position = new Point(0, 0);
+        private Point position = new(0, 0);
         public Point Position => position;
 
-        private Border border = new Border();
+        private Border border = new();
         public FrameworkElement UIElement => border;
-        private StackPanel verticalPanel = new StackPanel();
-        private List<MenuOption> options = new List<MenuOption>();
+        private StackPanel verticalPanel = new();
+        private List<MenuOption> options = new();
         public List<MenuOption> Options => options;
 
         /// <summary>
@@ -110,10 +110,23 @@ namespace WpfCustomControls {
                 Show();
             }
         }
-
         public void Show() => UIElement.Visibility = Visibility.Visible;
         public void Hide() => UIElement.Visibility = Visibility.Collapsed;
-        public void HideChildrenMenus() => options.ForEach(x => x.HideChilrenMenu());
+        public void HideWidthChildrenMenus() {
+            UIElement.Visibility = Visibility.Collapsed;
+            foreach (var option in options) {
+                if (option.HasMenu) {
+                    option.HideChilrenMenu();
+                }
+            }
+        }
+        public void HideChildrenMenus() {
+            foreach (var option in options) {
+                if (option.HasMenu) {
+                    option.HideChilrenMenu();
+                }
+            }
+        }
 
 
         public void AddOption(MenuOption option) {
@@ -150,14 +163,19 @@ namespace WpfCustomControls {
                 position.Y += parentElement.ActualHeight;
                 border.RenderTransform = new TranslateTransform(position.X, position.Y);
             }
-            else {
-                if (parentMenu == null || parentOption == null) {
-                    return;
-                }
-                position = parentMenu.Position;
-                position.X += parentOption.UIElement.ActualWidth;
-                position.Y += parentMenu.options.IndexOf(parentOption) * parentOption.UIElement.ActualHeight;
+            else if (parentMenu != null && parentOption != null) {
+                position = parentMenu!.Position;
+                position.X += parentOption!.UIElement.ActualWidth;
+                position.Y += parentMenu!.options.IndexOf(parentOption) * parentOption!.UIElement.ActualHeight;
                 border.RenderTransform = new TranslateTransform(position.X, position.Y);
+            }
+        }
+        public void UpdateMenuPositionWithChildren() {
+            UpdateMenuPosition();
+            foreach (var option in options) {
+                if (option.HasMenu) {
+                    option.UpdateMenuPosition();
+                }
             }
         }
 
@@ -172,7 +190,7 @@ namespace WpfCustomControls {
             private Grid grid = new Grid();
             public FrameworkElement UIElement => grid;
 
-            public IconSymbol symbol;
+            public System.Windows.Controls.Image icon = new();
             public TextBlock title = new TextBlock();
             public TextBlock keyboardShortCut = new TextBlock();
             public TextBlock arrow = new TextBlock();
@@ -180,14 +198,16 @@ namespace WpfCustomControls {
             private double height;
             public double Height => height;
 
-            private double symbolOffset = 3;
             private DropDownMenu menu;
+            private DropDownMenu parentMenu;
+            private bool hasMenu = false;
+            public bool HasMenu => hasMenu;
 
 
-            public MenuOption(double height) {
+            public MenuOption(double height, DropDownMenu parentMenu) {
                 menu = new DropDownMenu();
                 arrow.Text = " ";
-                symbol = new IconSymbol(height - symbolOffset * 2, height - symbolOffset * 2);
+                icon.RenderSize = new Size(height, height);
                 this.height = height;
 
                 ColumnDefinition symbolCol = new ColumnDefinition();
@@ -207,17 +227,19 @@ namespace WpfCustomControls {
                 grid.ColumnDefinitions.Add(arrowCol);
 
 
-                Helper.SetChildInGrid(grid, symbol.FrameworkElement, 0, 0);
+                Helper.SetChildInGrid(grid, icon, 0, 0);
                 Helper.SetChildInGrid(grid, title, 0, 1);
                 Helper.SetChildInGrid(grid, keyboardShortCut, 0, 2);
                 Helper.SetChildInGrid(grid, arrow, 0, 3);
 
                 grid.MouseEnter += Grid_MouseEnter;
                 grid.MouseLeave += Grid_MouseLeave;
+                this.parentMenu = parentMenu;
             }
 
 
-            public void HideChilrenMenu() => menu.Hide();
+            public void HideChilrenMenu() => menu.HideWidthChildrenMenus();
+            public void UpdateMenuPosition() => menu.UpdateMenuPositionWithChildren();
 
             private void Grid_MouseLeave(object sender, MouseEventArgs e) {
                 grid.Background = Brushes.Transparent;
@@ -227,7 +249,7 @@ namespace WpfCustomControls {
             }
 
             public MenuOption AddSymbol(string path) {
-                symbol = new IconSymbol(path, height - symbolOffset * 2, height - symbolOffset * 2);
+                Helper.SetImageSource(icon, path);
                 return this;
             }
             public MenuOption SetName(string nameText) {
@@ -254,9 +276,12 @@ namespace WpfCustomControls {
                 arrow.Margin = new Thickness(15, 0, 0, 0);
                 arrow.Text = ">";
                 arrow.Foreground = Brushes.White;
-                AddCommand(menu.ToggleVisibility);
 
                 this.menu = menu;
+                hasMenu = true;
+                
+                AddCommand(parentMenu.HideChildrenMenus);
+                AddCommand(menu.ToggleVisibility);
 
                 return this;
             }
@@ -270,42 +295,58 @@ namespace WpfCustomControls {
     public class WindowHandle {
         private System.Windows.Application application;
 
-        internal bool isUsingClientButtons = false;
+        private double applicationButtonWidth = 40;
+        private double applicationButtonHeight = 30;
+        private double clientButtonHeight = 20;
+        private double height = 30;
 
-        internal double applicationButtonWidth = 40;
-        internal double applicationButtonHeight = 30;
-        internal double clientButtonHeight = 20;
-        internal double height = 30;
+        private System.Windows.Controls.Image icon = new();
 
-        public IconSymbol icon;
+        private List<(Button, DropDownMenu)> clientButtons = new();
 
-        internal List<(Button, DropDownMenu)> clientButtons = new();
+        private Button exitButton = new();
+        private Button minimizeButton = new();
+        private Button maximizeButton = new();
 
-        internal Button exitButton = new();
-        internal Button minimizeButton = new();
-        internal Button maximizeButton = new();
-
-        internal StackPanel clientButtonStackPanel = new();
-        internal Grid applicationButtonGrid = new();
-        internal Grid mainGrid = new();
+        private bool isUsingClientButtons = false;
+        private StackPanel clientButtonStackPanel = new();
+        private Grid applicationButtonGrid = new();
+        private Grid mainGrid = new();
         public FrameworkElement FrameworkElement => mainGrid;
 
 
-        public WindowHandle SetParentWindow(Grid parentGrid) {
-            Helper.SetChildInGrid(parentGrid, FrameworkElement, 0, 0);
-            return this;
+        // Application Button Init
+        public void OverrideShutdown(Action action) {
+            exitButton.Click -= Shutdown;
+            exitButton.Click += (object sender, RoutedEventArgs e) => action();
         }
-        public WindowHandle SetParentWindow(Canvas canvas) {
-            canvas.Children.Add(mainGrid);
-            return this;
+        public void OverrideMinimize(Action action) {
+            exitButton.Click -= Minimize;
+            exitButton.Click += (object sender, RoutedEventArgs e) => action();
         }
+        public void OverrideMaximize(Action action) {
+            exitButton.Click -= Maximize;
+            exitButton.Click += (object sender, RoutedEventArgs e) => action();
+        }
+        private void Shutdown(object sender, RoutedEventArgs e) {
+            application.Shutdown();
+        }
+        private void Minimize(object sender, RoutedEventArgs e) {
+            application.MainWindow.WindowState = WindowState.Minimized;
+        }
+        private void Maximize(object sender, RoutedEventArgs e) {
+            if (application.MainWindow.WindowState == WindowState.Maximized) {
+                application.MainWindow.WindowState = WindowState.Normal;
+            }
+            else {
+                application.MainWindow.WindowState = WindowState.Maximized;
+            }
+        }
+
+        // Handle Bar Init
         public WindowHandle(System.Windows.Application application) {
             // var
             this.application = application;
-
-            // Icon
-            icon = new IconSymbol(height, height);
-
 
             // Set up Application Buttons
             exitButton.Style = ApplicationButtonStyle();
@@ -359,32 +400,13 @@ namespace WpfCustomControls {
             clientButtonStackPanel.Background = Brushes.Transparent;
             clientButtonStackPanel.Orientation = Orientation.Horizontal;
         }
-
-        public void OverrideShutdown(Action action) {
-            exitButton.Click -= Shutdown;
-            exitButton.Click += (object sender, RoutedEventArgs e) => action();
+        public WindowHandle SetParentWindow(Grid parentGrid) {
+            Helper.SetChildInGrid(parentGrid, FrameworkElement, 0, 0);
+            return this;
         }
-        public void OverrideMinimize(Action action) {
-            exitButton.Click -= Minimize;
-            exitButton.Click += (object sender, RoutedEventArgs e) => action();
-        }
-        public void OverrideMaximize(Action action) {
-            exitButton.Click -= Maximize;
-            exitButton.Click += (object sender, RoutedEventArgs e) => action();
-        }
-        private void Shutdown(object sender, RoutedEventArgs e) {
-            application.Shutdown();
-        }
-        private void Minimize(object sender, RoutedEventArgs e) {
-            application.MainWindow.WindowState = WindowState.Minimized;
-        }
-        private void Maximize(object sender, RoutedEventArgs e) {
-            if (application.MainWindow.WindowState == WindowState.Maximized) {
-                application.MainWindow.WindowState = WindowState.Normal;
-            }
-            else {
-                application.MainWindow.WindowState = WindowState.Maximized;
-            }
+        public WindowHandle SetParentWindow(Canvas canvas) {
+            canvas.Children.Add(mainGrid);
+            return this;
         }
 
         public WindowHandle SetHeight(double height) {
@@ -393,8 +415,9 @@ namespace WpfCustomControls {
             return this;
         }
         public WindowHandle AddIcon(string path) {
-            icon = new IconSymbol(path, height * 3/4, height * 3/4);
-            clientButtonStackPanel.Children.Insert(0, icon.FrameworkElement);
+            Helper.SetImageSource(icon, path);
+            icon.Margin = new Thickness(5);
+            clientButtonStackPanel.Children.Insert(0, icon);
             return this;
         }
         public WindowHandle SetApplicationButtonDimensions(double systemButtonWidth, double systemButtonHeight) {
@@ -409,7 +432,6 @@ namespace WpfCustomControls {
             maximizeButton.Foreground = color;
             return this;
         }
-
         public WindowHandle CreateClientButton(string name, DropDownMenu dropDownMenu) {
             Button newClientButton = new() {
                 Content = name,
@@ -421,68 +443,73 @@ namespace WpfCustomControls {
             return this;
         }
 
-        public WindowHandle ActivateAllClientButtons() {
+        // Client Button Init
+        public void ActivateAllClientButtons() {
             foreach (var button in clientButtons) {
                 ActivateClientButton(button);
-                button.Item2.HideChildrenMenus();
+                button.Item2.HideWidthChildrenMenus();
             }
-            HideAllClientButtons();
-            return this;
         }
-        private WindowHandle ActivateClientButton((Button, DropDownMenu) button) {
-            button.Item1.Loaded += (object sender, RoutedEventArgs e) => button.Item2.UpdateMenuPosition();
-            button.Item1.Click += (object sender, RoutedEventArgs e) => ActivateMenuOnClick(button.Item2);
-            return this;
+        private void ActivateClientButton((Button, DropDownMenu) button) {
+            button.Item1.Loaded += (object sender, RoutedEventArgs e) => button.Item2.UpdateOptionLayout();
+            button.Item1.Loaded += (object sender, RoutedEventArgs e) => button.Item2.UpdateMenuPositionWithChildren();
+            button.Item1.Click += (object sender, RoutedEventArgs e) => ToggleMenu(button.Item2);
+            button.Item1.MouseEnter += (object sender, MouseEventArgs e) => { 
+                if (isUsingClientButtons) {
+                    HideAllMenus();
+                    button.Item2.Show();
+                }
+            };
         }
-        private WindowHandle ActivateClientButton((Button, DropDownMenu) button, Action action) {
+
+        private void ActivateClientButton((Button, DropDownMenu) button, Action action) {
             ActivateClientButton(button);
             button.Item1.Click += (object sender, RoutedEventArgs e) => action();
-            return this;
         }
-        public WindowHandle ActivateButtonFunction(string name) {
+        public void ActivateButtonFunction(string name) {
             var button = GetClientButton(name);
             if (button.Item1 == null || button.Item2 == null) {
-                return this;
+                return;
             }
             ActivateClientButton(button);
-            return this;
         }
-        public WindowHandle SetButtonFunction(string name, Action action) {
+        public void SetButtonFunction(string name, Action action) {
             var button = GetClientButton(name);
             if (button.Item1 == null || button.Item2 == null) {
-                return this;
+                return;
             }
             ActivateClientButton(button, action);
-
-            return this;
         }
 
+        // Client Button Management
         public (Button, DropDownMenu) GetClientButton(string name) => clientButtons.Find(x => x.Item1.Content.ToString() == name);
         public Button ?GetClientButtonButton(string name) => clientButtons.Find(x => x.Item1.Content.ToString() == name).Item1;
-        private void ActivateMenuOnClick(DropDownMenu element) {
+        public void HideAllMenus() => clientButtons.ForEach(x => x.Item2.HideWidthChildrenMenus());
+        public void ToggleMenu(DropDownMenu element) {
             if (isUsingClientButtons) {
-                HideAllClientButtons();
+                HideAllMenus();
                 isUsingClientButtons = false;
             }
             else {
                 isUsingClientButtons = true;
-                ActivateClientButton(element);
+                element.Show();
             }
         }
-        private void ActivateClientButton(DropDownMenu element) => element.UIElement.Visibility = Visibility.Visible;
-        private void HideAllClientButtons() => clientButtons.ForEach(x =>  x.Item2.UIElement.Visibility = Visibility.Collapsed);
 
-        public void SetWindowChromActive() {
-            Activate(exitButton);
-            Activate(minimizeButton);
-            Activate(maximizeButton);
+        // Window Chrome
+        public void SetWindowChromActiveAll() {
+            SetWindowChromActive(exitButton);
+            SetWindowChromActive(minimizeButton);
+            SetWindowChromActive(maximizeButton);
             foreach ((Button, DropDownMenu) button in clientButtons) {
-                Activate(button.Item1);
+                SetWindowChromActive(button.Item1);
             }
         }
-        private void Activate(IInputElement element) {
+        public void SetWindowChromActive(IInputElement element) {
             WindowChrome.SetIsHitTestVisibleInChrome(element, true);
         }
+
+        // Visual
         private void UpdateApplicationButtons() {
             exitButton.Width = applicationButtonWidth;
             exitButton.Height =  applicationButtonHeight;
@@ -494,8 +521,6 @@ namespace WpfCustomControls {
             maximizeButton.Width = applicationButtonWidth;
             maximizeButton.Height = applicationButtonHeight;
         }
-
-
         public Style ClientButtonStyle() {
             Style clientButtonsStyle = new Style(typeof(Button));
 
@@ -567,61 +592,12 @@ namespace WpfCustomControls {
         }
     }
 
-    public class IconSymbol {
-        private Grid grid = new Grid();
-        private System.Windows.Controls.Image image = new System.Windows.Controls.Image();
-        public UIElement FrameworkElement => grid;
-
-        public IconSymbol(string path, double width, double height) {
-            image.Source = new BitmapImage(new Uri(path, UriKind.RelativeOrAbsolute));
-            image.HorizontalAlignment = HorizontalAlignment.Stretch;
-            image.VerticalAlignment = VerticalAlignment.Stretch;
-            image.Width = width;
-            image.Height = height;
-
-            ColumnDefinition c = new ColumnDefinition();
-            c.Width = new GridLength(width, GridUnitType.Pixel);
-            grid.ColumnDefinitions.Add(c);
-
-            RowDefinition r = new RowDefinition();
-            r.Height = new GridLength(height, GridUnitType.Pixel);
-            grid.RowDefinitions.Add(r);
-
-            grid.Children.Add(image);
-            Grid.SetColumn(image, 0);
-            Grid.SetRow(image, 0);
-        }
-        public IconSymbol(double width, double height) {
-            image.HorizontalAlignment = HorizontalAlignment.Stretch;
-            image.VerticalAlignment = VerticalAlignment.Stretch;
-            image.Width = width;
-            image.Height = height;
-
-            ColumnDefinition c = new ColumnDefinition();
-            c.Width = new GridLength(1, GridUnitType.Star);
-            grid.ColumnDefinitions.Add(c);
-
-            RowDefinition r = new RowDefinition();
-            r.Height = new GridLength(1, GridUnitType.Star);
-            grid.RowDefinitions.Add(r);
-
-            grid.Children.Add(image);
-            Grid.SetColumn(image, 0);
-            Grid.SetRow(image, 0);
-        }
-
-
-        public void SetGridPosition(Grid parent, int row, int column) {
-            if (grid.Parent.GetType() == typeof(Grid)) {
-                parent.Children.Add(grid);
-                Grid.SetColumn(grid, column);
-                Grid.SetRow(grid, row);
-            }
-        }
-    }
-
 
     public static class Helper {
+        public static void SetImageSource(System.Windows.Controls.Image image, string path) {
+            image.Source = new BitmapImage(new Uri(path, UriKind.RelativeOrAbsolute));
+        }
+
         public static void SetChildInGrid(Grid grid, UIElement child, int row, int column) {
             grid.Children.Add(child);
             Grid.SetColumn(child, column);

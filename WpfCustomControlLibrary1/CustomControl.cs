@@ -33,6 +33,8 @@ using System.Reflection.Metadata;
 using Microsoft.Win32;
 using System.Windows.Automation.Text;
 using static System.Net.Mime.MediaTypeNames;
+using System.Runtime.InteropServices;
+using System.Windows.Interop;
 
 namespace WpfCustomControls {
     /// <summary>
@@ -128,6 +130,17 @@ namespace WpfCustomControls {
             }
         }
 
+        public void ChangeBGColor(Brush color) {
+            verticalPanel.Background = color;
+        }
+        public void ChangeBGColorWithChildren(Brush color) {
+            ChangeBGColor(color);
+            foreach (var option in options) {
+                if (option.HasMenu) {
+                    option.ChildMenu.ChangeBGColor(color);
+                }
+            }
+        }
 
         public void AddOption(MenuOption option) {
             options.Add(option);
@@ -199,6 +212,7 @@ namespace WpfCustomControls {
             public double Height => height;
 
             private DropDownMenu menu;
+            public DropDownMenu ChildMenu => menu;
             private DropDownMenu parentMenu;
             private bool hasMenu = false;
             public bool HasMenu => hasMenu;
@@ -293,143 +307,103 @@ namespace WpfCustomControls {
     }
 
     public class WindowHandle {
-        private System.Windows.Application application;
+        private WindowChrome windowChrome = new();
+        public WindowChrome GetWindowChrome => windowChrome;
+        private readonly System.Windows.Application application;
 
-        private double applicationButtonWidth = 40;
-        private double applicationButtonHeight = 30;
+        private ApplicationButtonCollection applicationButtons;
+        public ApplicationButtonCollection ApplicationButtons;
         private double clientButtonHeight = 20;
         private double height = 30;
+        public double Height => height;
 
         private System.Windows.Controls.Image icon = new();
 
         private List<(Button, DropDownMenu)> clientButtons = new();
 
-        private Button exitButton = new();
-        private Button minimizeButton = new();
-        private Button maximizeButton = new();
-
         private bool isUsingClientButtons = false;
         private StackPanel clientButtonStackPanel = new();
-        private Grid applicationButtonGrid = new();
         private Grid mainGrid = new();
         public FrameworkElement FrameworkElement => mainGrid;
+        private Brush colorWhenButtonhover = Helper.Color("#3d3d3d");
+        private Brush bgColor = Helper.Color("#1f1f1f");
+        public Brush BGColor => bgColor;
 
-
-        // Application Button Init
-        public void OverrideShutdown(Action action) {
-            exitButton.Click -= Shutdown;
-            exitButton.Click += (object sender, RoutedEventArgs e) => action();
-        }
-        public void OverrideMinimize(Action action) {
-            exitButton.Click -= Minimize;
-            exitButton.Click += (object sender, RoutedEventArgs e) => action();
-        }
-        public void OverrideMaximize(Action action) {
-            exitButton.Click -= Maximize;
-            exitButton.Click += (object sender, RoutedEventArgs e) => action();
-        }
-        private void Shutdown(object sender, RoutedEventArgs e) {
-            application.Shutdown();
-        }
-        private void Minimize(object sender, RoutedEventArgs e) {
-            application.MainWindow.WindowState = WindowState.Minimized;
-        }
-        private void Maximize(object sender, RoutedEventArgs e) {
-            if (application.MainWindow.WindowState == WindowState.Maximized) {
-                application.MainWindow.WindowState = WindowState.Normal;
-            }
-            else {
-                application.MainWindow.WindowState = WindowState.Maximized;
-            }
-        }
+        private Canvas ?parentCanvas;
 
         // Handle Bar Init
-        public WindowHandle(System.Windows.Application application) {
+        public WindowHandle() {
             // var
-            this.application = application;
-
-            // Set up Application Buttons
-            exitButton.Style = ApplicationButtonStyle();
-            exitButton.Content = "x";
-            exitButton.Click += Shutdown;
-
-            minimizeButton.Style = ApplicationButtonStyle();
-            minimizeButton.Content = "-";
-            minimizeButton.Click += Minimize;
-
-            maximizeButton.Style = ApplicationButtonStyle();
-            maximizeButton.Content = "□";
-            maximizeButton.Click += Maximize;
-
-            UpdateApplicationButtons();
-
-            applicationButtonGrid.VerticalAlignment = VerticalAlignment.Center;
-            applicationButtonGrid.HorizontalAlignment = HorizontalAlignment.Right;
-
-            var mainRow = new RowDefinition { Height = new GridLength(1, GridUnitType.Star) };
-            var minimizeColumn = new ColumnDefinition { Width = new GridLength(applicationButtonWidth) };
-            var maximizeColumn = new ColumnDefinition { Width = new GridLength(applicationButtonWidth) };
-            var exitColumn = new ColumnDefinition { Width = new GridLength(applicationButtonWidth) };
-
-            applicationButtonGrid.RowDefinitions.Add(mainRow);
-            applicationButtonGrid.ColumnDefinitions.Add(minimizeColumn);
-            applicationButtonGrid.ColumnDefinitions.Add(maximizeColumn);
-            applicationButtonGrid.ColumnDefinitions.Add(exitColumn);
-
-            Helper.SetChildInGrid(applicationButtonGrid, minimizeButton, 0, 0);
-            Helper.SetChildInGrid(applicationButtonGrid, maximizeButton, 0, 1);
-            Helper.SetChildInGrid(applicationButtonGrid, exitButton, 0, 2);
-
+            application = System.Windows.Application.Current;
+            WindowChrome.SetWindowChrome(application.MainWindow, windowChrome);
+            applicationButtons = new();
+            ApplicationButtons = applicationButtons;
+            application.MainWindow.SourceInitialized += (s, e) =>
+            {
+                IntPtr handle = (new WindowInteropHelper(application.MainWindow)).Handle;
+                HwndSource.FromHwnd(handle).AddHook(new HwndSourceHook(WindowProc));
+            };
 
             // Set up Main Grid
-            mainGrid.Background = Helper.Color("#1f1f1f");
-            mainGrid.VerticalAlignment = VerticalAlignment.Stretch;
+            mainGrid.Background = bgColor;
+            mainGrid.VerticalAlignment = VerticalAlignment.Top;
             mainGrid.HorizontalAlignment = HorizontalAlignment.Stretch;
+            mainGrid.Width = application.MainWindow.Width;
+            mainGrid.Height = height;
 
-            mainRow = new RowDefinition { Height = new GridLength(1, GridUnitType.Star) };
+            application.MainWindow.SizeChanged += (s, e) => {
+                mainGrid.Width = application.MainWindow.ActualWidth;
+            };
+
+            var mainRow = new RowDefinition { Height = new GridLength(1, GridUnitType.Star) };
             var clientButtonColumn = new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) };
-            var applicationButtonColumn = new ColumnDefinition { Width = new GridLength(applicationButtonWidth * 3) };
+            var applicationButtonColumn = new ColumnDefinition { Width = new GridLength(applicationButtons.Width * 3) };
 
             mainGrid.RowDefinitions.Add(mainRow);
             mainGrid.ColumnDefinitions.Add(clientButtonColumn);
             mainGrid.ColumnDefinitions.Add(applicationButtonColumn);
 
             Helper.SetChildInGrid(mainGrid, clientButtonStackPanel, 0, 0);
-            Helper.SetChildInGrid(mainGrid, applicationButtonGrid, 0, 1);
+            Helper.SetChildInGrid(mainGrid, applicationButtons.FrameworkElement, 0, 1);
+
             // Set up Client Button Stack Panel
             clientButtonStackPanel.Background = Brushes.Transparent;
             clientButtonStackPanel.Orientation = Orientation.Horizontal;
         }
-        public WindowHandle SetParentWindow(Grid parentGrid) {
-            Helper.SetChildInGrid(parentGrid, FrameworkElement, 0, 0);
-            return this;
-        }
-        public WindowHandle SetParentWindow(Canvas canvas) {
-            canvas.Children.Add(mainGrid);
+
+        public WindowHandle SetParentWindow(Canvas parentCanvas) {
+            parentCanvas.Children.Add(mainGrid);
+            this.parentCanvas = parentCanvas;
             return this;
         }
 
-        public WindowHandle SetHeight(double height) {
-            this.height = height;
-            this.mainGrid.Height = height;
-            return this;
-        }
         public WindowHandle AddIcon(string path) {
             Helper.SetImageSource(icon, path);
             icon.Margin = new Thickness(5);
             clientButtonStackPanel.Children.Insert(0, icon);
             return this;
         }
-        public WindowHandle SetApplicationButtonDimensions(double systemButtonWidth, double systemButtonHeight) {
-            this.applicationButtonWidth = systemButtonWidth;
-            this.applicationButtonHeight = systemButtonHeight;
-            UpdateApplicationButtons();
+        public WindowHandle SetHeight(double height) {
+            this.height = height;
+            mainGrid.Height = height;
+            windowChrome.CaptionHeight = height;
+            
+            if (applicationButtons.Height < height) {
+                applicationButtons.Height = height;
+            }
+
             return this;
         }
-        public WindowHandle SetApplicationButtonColor(Brush color) {
-            exitButton.Foreground = color;
-            minimizeButton.Foreground = color;
-            maximizeButton.Foreground = color;
+        public WindowHandle SetBGColor(Brush color) {
+            mainGrid.Background = color;
+            return this;
+        }
+        public WindowHandle SetColorWhenHover(Brush color) {
+            colorWhenButtonhover = color;
+            foreach ((Button, DropDownMenu) button in clientButtons) {
+                UpdateButtonHoverColor(button.Item1);
+                button.Item2.ChangeBGColorWithChildren(color);
+            }
             return this;
         }
         public WindowHandle CreateClientButton(string name, DropDownMenu dropDownMenu) {
@@ -437,7 +411,8 @@ namespace WpfCustomControls {
                 Content = name,
                 Style = ClientButtonStyle()
             };
-
+            Helper.SetWindowChromActive(newClientButton);
+            parentCanvas?.Children.Add(dropDownMenu.UIElement);
             clientButtons.Add((newClientButton, dropDownMenu));
             clientButtonStackPanel.Children.Add(newClientButton);
             return this;
@@ -498,28 +473,24 @@ namespace WpfCustomControls {
 
         // Window Chrome
         public void SetWindowChromActiveAll() {
-            SetWindowChromActive(exitButton);
-            SetWindowChromActive(minimizeButton);
-            SetWindowChromActive(maximizeButton);
+            applicationButtons.SetWindowChromeActive();
             foreach ((Button, DropDownMenu) button in clientButtons) {
-                SetWindowChromActive(button.Item1);
+                Helper.SetWindowChromActive(button.Item1);
             }
-        }
-        public void SetWindowChromActive(IInputElement element) {
-            WindowChrome.SetIsHitTestVisibleInChrome(element, true);
         }
 
         // Visual
-        private void UpdateApplicationButtons() {
-            exitButton.Width = applicationButtonWidth;
-            exitButton.Height =  applicationButtonHeight;
+        private void UpdateButtonHoverColor(Button button) {
+            // Get the button's style
+            Style newStyle = new Style(typeof(Button), button.Style);
 
-            minimizeButton.Width = applicationButtonWidth;
-            minimizeButton.Height = applicationButtonHeight;
+            // Create the new Trigger
+            Trigger mouseOverTrigger = new Trigger { Property = UIElement.IsMouseOverProperty, Value = true };
+            mouseOverTrigger.Setters.Add(new Setter(Button.BackgroundProperty, colorWhenButtonhover));
+            newStyle.Triggers.Add(mouseOverTrigger);
 
-
-            maximizeButton.Width = applicationButtonWidth;
-            maximizeButton.Height = applicationButtonHeight;
+            // Apply the updated style to the button
+            button.Style = newStyle;
         }
         public Style ClientButtonStyle() {
             Style clientButtonsStyle = new Style(typeof(Button));
@@ -548,7 +519,7 @@ namespace WpfCustomControls {
             userButtonTemplate.VisualTree = borderFactory;
 
             Trigger mouseOverTrigger = new Trigger { Property = Button.IsMouseOverProperty, Value = true };
-            mouseOverTrigger.Setters.Add(new Setter(Button.BackgroundProperty, new SolidColorBrush(Color.FromRgb(0x3d, 0x3d, 0x3d))));
+            mouseOverTrigger.Setters.Add(new Setter(Button.BackgroundProperty, colorWhenButtonhover));
             mouseOverTrigger.Setters.Add(new Setter(Button.BorderBrushProperty, Brushes.Gray));
 
             userButtonTemplate.Triggers.Add(mouseOverTrigger);
@@ -559,41 +530,339 @@ namespace WpfCustomControls {
 
             return clientButtonsStyle;
         }
-        public Style ApplicationButtonStyle() {
-            // Create a new style for the button
-            Style style = new Style(typeof(Button));
-            style.Setters.Add(new Setter(Button.BackgroundProperty, Brushes.Transparent));
-            style.Setters.Add(new Setter(Button.ForegroundProperty, Brushes.White));
-            style.Setters.Add(new Setter(Button.BorderBrushProperty, Brushes.Transparent));
-            style.Setters.Add(new Setter(Button.HorizontalAlignmentProperty, HorizontalAlignment.Right));
-            style.Setters.Add(new Setter(Button.VerticalAlignmentProperty, VerticalAlignment.Top));
-            style.Setters.Add(new Setter(Button.WidthProperty, applicationButtonWidth));
-            style.Setters.Add(new Setter(Button.HeightProperty, applicationButtonHeight));
+        #region Fix the Winodw maximizing glitch
+        private static IntPtr WindowProc(IntPtr hwnd, int msg, IntPtr wParam, IntPtr lParam, ref bool handled) {
+            switch (msg) {
+                case 0x0024:
+                    WmGetMinMaxInfo(hwnd, lParam);
+                    handled = true;
+                    break;
+            }
+            return (IntPtr)0;
+        }
+        private static void WmGetMinMaxInfo(IntPtr hwnd, IntPtr lParam) {
+            MINMAXINFO mmi = (MINMAXINFO)Marshal.PtrToStructure(lParam, typeof(MINMAXINFO));
+            int MONITOR_DEFAULTTONEAREST = 0x00000002;
+            IntPtr monitor = MonitorFromWindow(hwnd, MONITOR_DEFAULTTONEAREST);
+            if (monitor != IntPtr.Zero) {
+                MONITORINFO monitorInfo = new MONITORINFO();
+                GetMonitorInfo(monitor, monitorInfo);
+                RECT rcWorkArea = monitorInfo.rcWork;
+                RECT rcMonitorArea = monitorInfo.rcMonitor;
+                mmi.ptMaxPosition.x = Math.Abs(rcWorkArea.left - rcMonitorArea.left);
+                mmi.ptMaxPosition.y = Math.Abs(rcWorkArea.top - rcMonitorArea.top);
+                mmi.ptMaxSize.x = Math.Abs(rcWorkArea.right - rcWorkArea.left);
+                mmi.ptMaxSize.y = Math.Abs(rcWorkArea.bottom - rcWorkArea.top);
+            }
+            Marshal.StructureToPtr(mmi, lParam, true);
+        }
 
-            // Set the control template of the button
-            ControlTemplate template = new ControlTemplate(typeof(Button));
-            FrameworkElementFactory border = new FrameworkElementFactory(typeof(Border));
-            border.SetBinding(Button.BackgroundProperty, new Binding("Background") { RelativeSource = new RelativeSource(RelativeSourceMode.TemplatedParent) });
-            border.SetBinding(Button.BorderBrushProperty, new Binding("BorderBrush") { RelativeSource = new RelativeSource(RelativeSourceMode.TemplatedParent) });
-            border.SetBinding(Button.BorderThicknessProperty, new Binding("BorderThickness") { RelativeSource = new RelativeSource(RelativeSourceMode.TemplatedParent) });
-            FrameworkElementFactory contentPresenter = new FrameworkElementFactory(typeof(ContentPresenter));
-            contentPresenter.SetValue(Button.HorizontalAlignmentProperty, HorizontalAlignment.Center);
-            contentPresenter.SetValue(Button.VerticalAlignmentProperty, VerticalAlignment.Center);
-            border.AppendChild(contentPresenter);
-            template.VisualTree = border;
-            style.Setters.Add(new Setter(Button.TemplateProperty, template));
+        [StructLayout(LayoutKind.Sequential)]
+        public struct POINT {
+            /// <summary>x coordinate of point.</summary>
+            public int x;
+            /// <summary>y coordinate of point.</summary>
+            public int y;
+            /// <summary>Construct a point of coordinates (x,y).</summary>
+            public POINT(int x, int y) {
+                this.x = x;
+                this.y = y;
+            }
+        }
 
-            // Add a trigger to change the background color when the mouse is over the button
-            Trigger mouseOverTrigger = new Trigger { Property = UIElement.IsMouseOverProperty, Value = true };
-            mouseOverTrigger.Setters.Add(new Setter(Button.BackgroundProperty, Helper.Color("#3d3d3d")));
-            style.Triggers.Add(mouseOverTrigger);
+        [StructLayout(LayoutKind.Sequential)]
+        public struct MINMAXINFO {
+            public POINT ptReserved;
+            public POINT ptMaxSize;
+            public POINT ptMaxPosition;
+            public POINT ptMinTrackSize;
+            public POINT ptMaxTrackSize;
+        };
 
-            return style;
+        [StructLayout(LayoutKind.Sequential, CharSet = CharSet.Auto)]
+        public class MONITORINFO {
+            public int cbSize = Marshal.SizeOf(typeof(MONITORINFO));
+            public RECT rcMonitor = new RECT();
+            public RECT rcWork = new RECT();
+            public int dwFlags = 0;
+        }
+
+        [StructLayout(LayoutKind.Sequential, Pack = 0)]
+        public struct RECT {
+            public int left;
+            public int top;
+            public int right;
+            public int bottom;
+            public static readonly RECT Empty = new RECT();
+            public int Width { get { return Math.Abs(right - left); } }
+            public int Height { get { return bottom - top; } }
+            public RECT(int left, int top, int right, int bottom) {
+                this.left = left;
+                this.top = top;
+                this.right = right;
+                this.bottom = bottom;
+            }
+            public RECT(RECT rcSrc) {
+                left = rcSrc.left;
+                top = rcSrc.top;
+                right = rcSrc.right;
+                bottom = rcSrc.bottom;
+            }
+            public bool IsEmpty { get { return left >= right || top >= bottom; } }
+            public override string ToString() {
+                if (this == Empty) { return "RECT {Empty}"; }
+                return "RECT { left : " + left + " / top : " + top + " / right : " + right + " / bottom : " + bottom + " }";
+            }
+            public override bool Equals(object obj) {
+                if (!(obj is Rect)) return false;
+                return (this == (RECT)obj);
+            }
+            /// <summary>Return the HashCode for this struct (not garanteed to be unique)</summary>
+            public override int GetHashCode() => left.GetHashCode() + top.GetHashCode() + right.GetHashCode() + bottom.GetHashCode();
+            /// <summary> Determine if 2 RECT are equal (deep compare)</summary>
+            public static bool operator ==(RECT rect1, RECT rect2) { return (rect1.left == rect2.left && rect1.top == rect2.top && rect1.right == rect2.right && rect1.bottom == rect2.bottom); }
+            /// <summary> Determine if 2 RECT are different(deep compare)</summary>
+            public static bool operator !=(RECT rect1, RECT rect2) { return !(rect1 == rect2); }
+        }
+
+        [DllImport("user32")]
+        internal static extern bool GetMonitorInfo(IntPtr hMonitor, MONITORINFO lpmi);
+
+        [DllImport("User32")]
+        internal static extern IntPtr MonitorFromWindow(IntPtr handle, int flags);
+        #endregion
+
+        public class ApplicationButtonCollection {
+            private double height = 30;
+            private double width = 40;
+            public double Height {
+                get { return height; } 
+                set {
+                    if (value <= System.Windows.Application.Current.MainWindow.Height) {
+                        height = value;
+                        exitButton.Height = height;
+                        minimizeButton.Height = height;
+                        maximizeButton.Height = height;
+                    }
+                }
+            }
+            public double Width {
+                get { return width; }
+                set {
+                    if (value <= System.Windows.Application.Current.MainWindow.Width / 3) {
+                        width = value;
+                    }
+                }
+            }
+
+            private Button exitButton = new();
+            private Button minimizeButton = new();
+            private Button maximizeButton = new();
+            public Button ExitButton => exitButton;
+            public Button MinimizeButton => minimizeButton;
+            public Button MaximizeButton => maximizeButton;
+
+            private Grid grid = new();
+            public FrameworkElement FrameworkElement => grid;
+
+            private Brush colorWhenButtonHover = Helper.Color("#3d3d3d");
+            private Brush color = Brushes.Transparent;
+            private Brush symbolColor = Brushes.White;
+            public Brush ColorWhenButtonHover {
+                get => colorWhenButtonHover;
+                set {
+                    colorWhenButtonHover = value;
+                    UpdateColors();
+                }
+            }
+            public Brush Color {
+                get => color;
+                set {
+                    color = value;
+                    UpdateColors();
+                }
+            }
+            public Brush SymbolColor {
+                get => symbolColor;
+                set {
+                    symbolColor = value;
+                    UpdateColors();
+                }
+            }
+
+
+            public ApplicationButtonCollection() {
+                exitButton.Style = ApplicationButtonStyle();
+                exitButton.Content = "x";
+                exitButton.Click += Shutdown;
+                exitButton.MouseEnter += (object sender, MouseEventArgs e) => {
+                    exitButton.Background = colorWhenButtonHover;
+                };
+                exitButton.MouseLeave += (object sender, MouseEventArgs e) => {
+                    exitButton.Background = color;
+                };
+                Helper.SetWindowChromActive(exitButton);
+
+                minimizeButton.Style = ApplicationButtonStyle();
+                minimizeButton.Content = "-";
+                minimizeButton.Click += Minimize;
+                minimizeButton.MouseEnter += (object sender, MouseEventArgs e) => {
+                    minimizeButton.Background = colorWhenButtonHover;
+                };
+                minimizeButton.MouseLeave += (object sender, MouseEventArgs e) => {
+                    minimizeButton.Background = color;
+                };
+                Helper.SetWindowChromActive(minimizeButton);
+
+                maximizeButton.Style = ApplicationButtonStyle();
+                maximizeButton.Content = "□";
+                maximizeButton.Click += Maximize;
+                maximizeButton.MouseEnter += (object sender, MouseEventArgs e) => {
+                    maximizeButton.Background = colorWhenButtonHover;
+                };
+                maximizeButton.MouseLeave += (object sender, MouseEventArgs e) => {
+                    maximizeButton.Background = color;
+                };
+                Helper.SetWindowChromActive(maximizeButton);
+
+
+                grid.VerticalAlignment = VerticalAlignment.Center;
+                grid.HorizontalAlignment = HorizontalAlignment.Right;
+
+                var mainRow = new RowDefinition { Height = new GridLength(1, GridUnitType.Star) };
+                var minimizeColumn = new ColumnDefinition { Width = new GridLength(Width) };
+                var maximizeColumn = new ColumnDefinition { Width = new GridLength(Width) };
+                var exitColumn = new ColumnDefinition { Width = new GridLength(Width) };
+
+                grid.RowDefinitions.Add(mainRow);
+                grid.ColumnDefinitions.Add(minimizeColumn);
+                grid.ColumnDefinitions.Add(maximizeColumn);
+                grid.ColumnDefinitions.Add(exitColumn);
+
+                Helper.SetChildInGrid(grid, minimizeButton, 0, 0);
+                Helper.SetChildInGrid(grid, maximizeButton, 0, 1);
+                Helper.SetChildInGrid(grid, exitButton, 0, 2);
+
+                UpdateColors();
+                UpdateSize();
+            }
+
+            public Style ApplicationButtonStyle() {
+                // Create a new style for the button
+                Style style = new Style(typeof(Button));
+                style.Setters.Add(new Setter(Button.BackgroundProperty, color));
+                style.Setters.Add(new Setter(Button.ForegroundProperty, symbolColor));
+                style.Setters.Add(new Setter(Button.BorderBrushProperty, Brushes.Transparent));
+                style.Setters.Add(new Setter(Button.HorizontalAlignmentProperty, HorizontalAlignment.Right));
+                style.Setters.Add(new Setter(Button.VerticalAlignmentProperty, VerticalAlignment.Top));
+                style.Setters.Add(new Setter(Button.WidthProperty, Width));
+                style.Setters.Add(new Setter(Button.HeightProperty, Height));
+
+                // Set the control template of the button
+                ControlTemplate template = new ControlTemplate(typeof(Button));
+                FrameworkElementFactory border = new FrameworkElementFactory(typeof(Border));
+                border.SetBinding(Button.BackgroundProperty, new Binding("Background") { RelativeSource = new RelativeSource(RelativeSourceMode.TemplatedParent) });
+                border.SetBinding(Button.BorderBrushProperty, new Binding("BorderBrush") { RelativeSource = new RelativeSource(RelativeSourceMode.TemplatedParent) });
+                border.SetBinding(Button.BorderThicknessProperty, new Binding("BorderThickness") { RelativeSource = new RelativeSource(RelativeSourceMode.TemplatedParent) });
+                FrameworkElementFactory contentPresenter = new FrameworkElementFactory(typeof(ContentPresenter));
+                contentPresenter.SetValue(Button.HorizontalAlignmentProperty, HorizontalAlignment.Center);
+                contentPresenter.SetValue(Button.VerticalAlignmentProperty, VerticalAlignment.Center);
+                border.AppendChild(contentPresenter);
+                template.VisualTree = border;
+                style.Setters.Add(new Setter(Button.TemplateProperty, template));
+
+                return style;
+            }
+
+            
+            public void SetWindowChromeActive() {
+                Helper.SetWindowChromActive(exitButton);
+                Helper.SetWindowChromActive(minimizeButton);
+                Helper.SetWindowChromActive(maximizeButton);
+            }
+
+            public void OverrideShutdown(Action action) {
+                exitButton.Click -= Shutdown;
+                exitButton.Click += (object sender, RoutedEventArgs e) => action();
+            }
+            public void OverrideMinimize(Action action) {
+                exitButton.Click -= Minimize;
+                exitButton.Click += (object sender, RoutedEventArgs e) => action();
+            }
+            public void OverrideMaximize(Action action) {
+                exitButton.Click -= Maximize;
+                exitButton.Click += (object sender, RoutedEventArgs e) => action();
+            }
+            private void Shutdown(object sender, RoutedEventArgs e) {
+                System.Windows.Application.Current.Shutdown();
+            }
+            private void Minimize(object sender, RoutedEventArgs e) {
+                System.Windows.Application.Current.MainWindow.WindowState = WindowState.Minimized;
+            }
+            private void Maximize(object sender, RoutedEventArgs e) {
+                if (System.Windows.Application.Current.MainWindow.WindowState == WindowState.Maximized) {
+                    // Go into windowed
+                    System.Windows.Application.Current.MainWindow.WindowState = WindowState.Normal;
+
+                }
+                else {
+                    // Go into maximized
+                    System.Windows.Application.Current.MainWindow.WindowState = WindowState.Maximized;
+
+                }
+                // Update Layout
+                System.Windows.Application.Current.MainWindow.UpdateLayout();
+            }
+
+            public void UpdateSize() {
+                exitButton.Width = Width;
+                exitButton.Height = Height;
+
+
+                minimizeButton.Width = Width;
+                minimizeButton.Height = Height;
+
+
+                maximizeButton.Width = Width;
+                maximizeButton.Height = Height;
+            }
+            public void UpdateColors() {
+                exitButton.Background = color;
+                exitButton.Foreground = symbolColor;
+                Helper.UpdateButtonHoverColor(ExitButton, colorWhenButtonHover);
+
+
+                minimizeButton.Background = color;
+                minimizeButton.Foreground = symbolColor;
+                Helper.UpdateButtonHoverColor(minimizeButton, colorWhenButtonHover);
+
+
+                maximizeButton.Background = color;
+                maximizeButton.Foreground = symbolColor;
+                Helper.UpdateButtonHoverColor(maximizeButton, colorWhenButtonHover);
+            }
         }
     }
 
 
     public static class Helper {
+        public static void UpdateButtonHoverColor(Button button, Brush colorWhenButtonhover) {
+            // Get the button's style
+            Style newStyle = new Style(typeof(Button), button.Style);
+
+            // Create the new Trigger
+            Trigger mouseOverTrigger = new Trigger { Property = UIElement.IsMouseOverProperty, Value = true };
+            mouseOverTrigger.Setters.Add(new Setter(Button.BackgroundProperty, colorWhenButtonhover));
+            newStyle.Triggers.Add(mouseOverTrigger);
+
+            // Apply the updated style to the button
+            button.Style = newStyle;
+        }
+
+        public static void SetWindowChromActive(IInputElement element) {
+            WindowChrome.SetIsHitTestVisibleInChrome(element, true);
+        }
+
         public static void SetImageSource(System.Windows.Controls.Image image, string path) {
             image.Source = new BitmapImage(new Uri(path, UriKind.RelativeOrAbsolute));
         }
@@ -626,6 +895,23 @@ namespace WpfCustomControls {
         public static SolidColorBrush Color(string hex) {
             return new SolidColorBrush((Color)ColorConverter.ConvertFromString(hex));
         }
+
+        public static SolidColorBrush StringToSolidColorBrush(string colorString, double opacity = 1.0) {
+            SolidColorBrush brush;
+
+            try {
+                Color color = (Color)ColorConverter.ConvertFromString(colorString);
+                color.A = (byte)(255 * opacity);
+                brush = new SolidColorBrush(color);
+            }
+            catch (FormatException) {
+                // If the string cannot be converted to a color, return a transparent brush
+                brush = new SolidColorBrush(System.Windows.Media.Color.FromArgb(0, 0, 0, 0));
+            }
+
+            return brush;
+        }
+
     }
 
 

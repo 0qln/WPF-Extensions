@@ -83,10 +83,14 @@ namespace WpfCustomControls {
         private List<MenuOption> options = new();
         public List<MenuOption> Options => options;
 
+        private string name;
+        public string Name => name;
+
         /// <summary>
         /// Create an instance
         /// </summary>
-        public DropDownMenu() {
+        public DropDownMenu(string name) {
+            this.name = name;
             Init();
         }
         public void Instanciate(FrameworkElement parent) {
@@ -98,10 +102,13 @@ namespace WpfCustomControls {
             this.parentOption = parentOption;
         }
         private void Init() {
-            verticalPanel.Background = Helper.Color("#2e2e2e");
+            verticalPanel.Background = Helper.StringToSolidColorBrush("#2e2e2e");
             verticalPanel.Orientation = Orientation.Vertical;
             border.Child = verticalPanel;
             border.Style = System.Windows.Application.Current.Resources["ClientButtonUnfoldMenu_Style"] as Style;
+        }
+        public void SetCanvas(Canvas canvas) {
+            canvas.Children.Add(UIElement);
         }
 
         public void ToggleVisibility() {
@@ -142,11 +149,16 @@ namespace WpfCustomControls {
             }
         }
 
-        public void AddOption(MenuOption option) {
+        public MenuOption AddOption(string name, double height = 22) {
+            return AddOption(NewOption(name, height));
+        }
+        public MenuOption AddOption(MenuOption option) {
             options.Add(option);
             verticalPanel.Children.Add(option.UIElement);
             UpdateOptionLayout();
+            return option;
         }
+        public MenuOption NewOption(string name, double height = 22) => new MenuOption(height, name, this);
         public MenuOption GetOption(int index) => options[index];
         public MenuOption ?GetOption(string name) => options.Find(option => name == option.GetName);
 
@@ -155,15 +167,21 @@ namespace WpfCustomControls {
             var grids = verticalPanel.Children.OfType<Grid>();
 
             //Name
+            foreach (var grid in grids) {
+                grid.ColumnDefinitions[1].Width = new GridLength(1, GridUnitType.Auto);
+            }
             maxWidth = grids.Max(g => Helper.GetActualColumnWidth(g, 1));
             foreach (var grid in grids) {
                 grid.ColumnDefinitions[1].Width = new GridLength(maxWidth);
             }
 
             //Shortcut
+            foreach (var grid in grids) {
+                grid.ColumnDefinitions[2].Width = new GridLength(1, GridUnitType.Auto);
+            }
             maxWidth = 0;
             maxWidth = grids.Max(g => Helper.GetActualColumnWidth(g, 2));
-            foreach (var grid in grids) {
+            foreach(var grid in grids) {
                 grid.ColumnDefinitions[2].Width = new GridLength(maxWidth);
             }
         }
@@ -211,18 +229,27 @@ namespace WpfCustomControls {
             private double height;
             public double Height => height;
 
-            private DropDownMenu menu;
-            public DropDownMenu ChildMenu => menu;
+            private DropDownMenu childMenu;
+            public DropDownMenu ChildMenu => childMenu;
             private DropDownMenu parentMenu;
+            public DropDownMenu ParentMenu => parentMenu;
             private bool hasMenu = false;
             public bool HasMenu => hasMenu;
 
 
-            public MenuOption(double height, DropDownMenu parentMenu) {
-                menu = new DropDownMenu();
+            public MenuOption(double height, string optionName, DropDownMenu parentMenu) {
+                this.parentMenu = parentMenu;
+                this.name = optionName;
+                this.height = height;
+                childMenu = new DropDownMenu(optionName);
                 arrow.Text = " ";
                 icon.RenderSize = new Size(height, height);
-                this.height = height;
+
+                title.Margin = new Thickness(15, 0, 0, 0);
+                title.Text = optionName;
+                title.Foreground = Brushes.White;
+                title.VerticalAlignment = VerticalAlignment.Top;
+                title.HorizontalAlignment = HorizontalAlignment.Left;
 
                 ColumnDefinition symbolCol = new ColumnDefinition();
                 symbolCol.Width = new GridLength(height, GridUnitType.Pixel);
@@ -248,33 +275,22 @@ namespace WpfCustomControls {
 
                 grid.MouseEnter += Grid_MouseEnter;
                 grid.MouseLeave += Grid_MouseLeave;
-                this.parentMenu = parentMenu;
+
             }
 
 
-            public void HideChilrenMenu() => menu.HideWidthChildrenMenus();
-            public void UpdateMenuPosition() => menu.UpdateMenuPositionWithChildren();
+            public void HideChilrenMenu() => childMenu.HideWidthChildrenMenus();
+            public void UpdateMenuPosition() => childMenu.UpdateMenuPositionWithChildren();
 
             private void Grid_MouseLeave(object sender, MouseEventArgs e) {
                 grid.Background = Brushes.Transparent;
             }
             private void Grid_MouseEnter(object sender, MouseEventArgs e) {
-                grid.Background = Helper.Color("#3d3d3d");
+                grid.Background = Helper.StringToSolidColorBrush("#3d3d3d");
             }
 
             public MenuOption AddSymbol(string path) {
                 Helper.SetImageSource(icon, path);
-                return this;
-            }
-            public MenuOption SetName(string nameText) {
-                name = nameText;
-
-                title.Margin = new Thickness(15, 0, 0, 0);
-                title.Text = nameText;
-                title.Foreground = Brushes.White;
-                title.VerticalAlignment = VerticalAlignment.Top;
-                title.HorizontalAlignment = HorizontalAlignment.Left;
-
                 return this;
             }
             public MenuOption SetKeyboardShortcut(string kShortcut) {
@@ -283,7 +299,6 @@ namespace WpfCustomControls {
                 keyboardShortCut.Foreground = Brushes.White;
                 keyboardShortCut.VerticalAlignment = VerticalAlignment.Top;
                 keyboardShortCut.HorizontalAlignment = HorizontalAlignment.Left;
-
                 return this;
             }
             public MenuOption AddDropdownMenu(DropDownMenu menu) {
@@ -291,16 +306,15 @@ namespace WpfCustomControls {
                 arrow.Text = ">";
                 arrow.Foreground = Brushes.White;
 
-                this.menu = menu;
+                this.childMenu = menu;
                 hasMenu = true;
                 
                 AddCommand(parentMenu.HideChildrenMenus);
                 AddCommand(menu.ToggleVisibility);
-
                 return this;
             }
             public MenuOption AddCommand(Action command) {
-                grid.MouseLeftButtonUp += (sender, e) => command();
+                grid.MouseLeftButtonUp += (s, e) => command();
                 return this;
             }
         }
@@ -325,8 +339,8 @@ namespace WpfCustomControls {
         private StackPanel clientButtonStackPanel = new();
         private Grid mainGrid = new();
         public FrameworkElement FrameworkElement => mainGrid;
-        private Brush colorWhenButtonhover = Helper.Color("#3d3d3d");
-        private Brush bgColor = Helper.Color("#1f1f1f");
+        private Brush colorWhenButtonhover = Helper.StringToSolidColorBrush("#3d3d3d");
+        private Brush bgColor = Helper.StringToSolidColorBrush("#1f1f1f");
         public Brush BGColor => bgColor;
 
         private Canvas ?parentCanvas;
@@ -370,7 +384,6 @@ namespace WpfCustomControls {
             clientButtonStackPanel.Background = Brushes.Transparent;
             clientButtonStackPanel.Orientation = Orientation.Horizontal;
         }
-
         public WindowHandle SetParentWindow(Canvas parentCanvas) {
             parentCanvas.Children.Add(mainGrid);
             this.parentCanvas = parentCanvas;
@@ -406,15 +419,18 @@ namespace WpfCustomControls {
             }
             return this;
         }
-        public WindowHandle CreateClientButton(string name, DropDownMenu dropDownMenu) {
+        public WindowHandle CreateClientButton(DropDownMenu dropDownMenu) {
             Button newClientButton = new() {
-                Content = name,
+                Content = dropDownMenu.Name,
                 Style = ClientButtonStyle()
             };
             Helper.SetWindowChromActive(newClientButton);
             parentCanvas?.Children.Add(dropDownMenu.UIElement);
             clientButtons.Add((newClientButton, dropDownMenu));
             clientButtonStackPanel.Children.Add(newClientButton);
+
+            dropDownMenu.Instanciate(newClientButton);
+
             return this;
         }
 
@@ -423,6 +439,7 @@ namespace WpfCustomControls {
             foreach (var button in clientButtons) {
                 ActivateClientButton(button);
                 button.Item2.HideWidthChildrenMenus();
+                button.Item2.UpdateOptionLayout();
             }
         }
         private void ActivateClientButton((Button, DropDownMenu) button) {
@@ -665,7 +682,7 @@ namespace WpfCustomControls {
             private Grid grid = new();
             public FrameworkElement FrameworkElement => grid;
 
-            private Brush colorWhenButtonHover = Helper.Color("#3d3d3d");
+            private Brush colorWhenButtonHover = Helper.StringToSolidColorBrush("#3d3d3d");
             private Brush color = Brushes.Transparent;
             private Brush symbolColor = Brushes.White;
             public Brush ColorWhenButtonHover {
@@ -892,10 +909,6 @@ namespace WpfCustomControls {
             return rowHeight;
         }
 
-        public static SolidColorBrush Color(string hex) {
-            return new SolidColorBrush((Color)ColorConverter.ConvertFromString(hex));
-        }
-
         public static SolidColorBrush StringToSolidColorBrush(string colorString, double opacity = 1.0) {
             SolidColorBrush brush;
 
@@ -912,6 +925,16 @@ namespace WpfCustomControls {
             return brush;
         }
 
+
+
+        public static void AddRow(Grid grid, double value, GridUnitType type) {
+            RowDefinition rowDefinition = new RowDefinition { Height = new GridLength(value, type) };
+            grid.RowDefinitions.Add(rowDefinition);
+        }
+        public static void AddColumn(Grid grid, double value, GridUnitType type) {
+            ColumnDefinition columnDefinition = new ColumnDefinition { Width = new GridLength(value, type) };
+            grid.ColumnDefinitions.Add(columnDefinition);
+        }
     }
 
 

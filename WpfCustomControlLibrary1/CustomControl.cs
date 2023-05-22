@@ -69,6 +69,7 @@ namespace WpfCustomControls {
 
 
     public class DropDownMenu {
+        private Window rootWindow;
 
         private bool isChildOfMenu = false;
         private DropDownMenu ?parentMenu;
@@ -89,7 +90,8 @@ namespace WpfCustomControls {
         /// <summary>
         /// Create an instance
         /// </summary>
-        public DropDownMenu(string name) {
+        public DropDownMenu(string name, Window rootWindow) {
+            this.rootWindow = rootWindow;
             this.name = name;
             Init();
         }
@@ -105,7 +107,7 @@ namespace WpfCustomControls {
             verticalPanel.Background = Helper.StringToSolidColorBrush("#2e2e2e");
             verticalPanel.Orientation = Orientation.Vertical;
             border.Child = verticalPanel;
-            border.Style = System.Windows.Application.Current.Resources["ClientButtonUnfoldMenu_Style"] as Style;
+            border.Style = System.Windows.Application.Current.Resources["ClientButtonUnfoldMenu_Style"] as Style; 
         }
         public void SetCanvas(Canvas canvas) {
             canvas.Children.Add(UIElement);
@@ -190,7 +192,7 @@ namespace WpfCustomControls {
                 if (parentElement == null) {
                     return;
                 }
-                position = Helper.GetAbsolutePosition(parentElement);
+                position = Helper.GetAbsolutePosition(parentElement, rootWindow);
                 position.Y += parentElement.ActualHeight;
                 border.RenderTransform = new TranslateTransform(position.X, position.Y);
             }
@@ -241,7 +243,7 @@ namespace WpfCustomControls {
                 this.parentMenu = parentMenu;
                 this.name = optionName;
                 this.height = height;
-                childMenu = new DropDownMenu(optionName);
+                childMenu = new DropDownMenu(optionName, parentMenu.rootWindow);
                 arrow.Text = " ";
                 icon.RenderSize = new Size(height, height);
 
@@ -323,7 +325,7 @@ namespace WpfCustomControls {
     public class WindowHandle {
         private WindowChrome windowChrome = new();
         public WindowChrome GetWindowChrome => windowChrome;
-        private readonly System.Windows.Application application;
+        private Window window;
 
         private ApplicationButtonCollection applicationButtons;
         public ApplicationButtonCollection ApplicationButtons;
@@ -346,14 +348,15 @@ namespace WpfCustomControls {
         private Canvas ?parentCanvas;
 
         // Handle Bar Init
-        public WindowHandle() {
+        public WindowHandle(Window window) {
+            this.window = window;
+
             // var
-            application = System.Windows.Application.Current;
-            WindowChrome.SetWindowChrome(application.MainWindow, windowChrome);
-            applicationButtons = new(this);
+            WindowChrome.SetWindowChrome(window, windowChrome);
+            applicationButtons = new(this, window);
             ApplicationButtons = applicationButtons;
-            application.MainWindow.SourceInitialized += (s, e) => {
-                IntPtr handle = (new WindowInteropHelper(application.MainWindow)).Handle;
+            window.SourceInitialized += (s, e) => {
+                IntPtr handle = (new WindowInteropHelper(window)).Handle;
                 HwndSource.FromHwnd(handle).AddHook(new HwndSourceHook(WindowProc));
             };
 
@@ -361,11 +364,11 @@ namespace WpfCustomControls {
             mainGrid.Background = bgColor;
             mainGrid.VerticalAlignment = VerticalAlignment.Top;
             mainGrid.HorizontalAlignment = HorizontalAlignment.Stretch;
-            mainGrid.Width = application.MainWindow.Width;
+            mainGrid.Width = window.Width;
             mainGrid.Height = height;
 
-            application.MainWindow.SizeChanged += (s, e) => {
-                mainGrid.Width = application.MainWindow.ActualWidth;
+            window.SizeChanged += (s, e) => {
+                mainGrid.Width = window.ActualWidth;
             };
 
             var mainRow = new RowDefinition { Height = new GridLength(1, GridUnitType.Star) };
@@ -651,12 +654,14 @@ namespace WpfCustomControls {
         #endregion
 
         public class ApplicationButtonCollection {
+            private Window window;
+
             private double height = 30;
             private double width = 40;
             public double Height {
                 get { return height; } 
                 set {
-                    if (value <= System.Windows.Application.Current.MainWindow.Height) {
+                    if (value <= window.Height) {
                         height = value;
                         exitButton.Height = height;
                         minimizeButton.Height = height;
@@ -670,7 +675,7 @@ namespace WpfCustomControls {
             public double Width {
                 get { return width; }
                 set {
-                    if (value <= System.Windows.Application.Current.MainWindow.Width / 3) {
+                    if (value <= window.Width / 3) {
                         width = value;
                         exitButton.Width = value;
                         minimizeButton.Width = value;
@@ -748,7 +753,8 @@ namespace WpfCustomControls {
             private WindowHandle windowHandle;
 
 
-            public ApplicationButtonCollection(WindowHandle windowHandle) {
+            public ApplicationButtonCollection(WindowHandle windowHandle, Window window) {
+                this.window = window;
                 this.windowHandle = windowHandle;
 
 
@@ -867,24 +873,22 @@ namespace WpfCustomControls {
                 settingsButton.Click += (object sender, RoutedEventArgs e) => action();
             }
             private void Shutdown(object sender, RoutedEventArgs e) {
-                System.Windows.Application.Current.Shutdown();
+                window.Close();
             }
             private void Minimize(object sender, RoutedEventArgs e) {
-                System.Windows.Application.Current.MainWindow.WindowState = WindowState.Minimized;
+                window.WindowState = WindowState.Minimized;
             }
             private void Maximize(object sender, RoutedEventArgs e) {
-                if (System.Windows.Application.Current.MainWindow.WindowState == WindowState.Maximized) {
+                if (window.WindowState == WindowState.Maximized) {
                     // Go into windowed
-                    System.Windows.Application.Current.MainWindow.WindowState = WindowState.Normal;
-
+                    window.WindowState = WindowState.Normal;
                 }
                 else {
                     // Go into maximized
-                    System.Windows.Application.Current.MainWindow.WindowState = WindowState.Maximized;
-
+                    window.WindowState = WindowState.Maximized;
                 }
                 // Update Layout
-                System.Windows.Application.Current.MainWindow.UpdateLayout();
+                window.UpdateLayout();
             }
             private void Settings(object sender, RoutedEventArgs e) {
 
@@ -960,9 +964,9 @@ namespace WpfCustomControls {
             Grid.SetRow(child, row);
         }
 
-        public static Point GetAbsolutePosition(FrameworkElement ?element) {
+        public static Point GetAbsolutePosition(FrameworkElement ?element, Window rootWindow) {
             if (element == null) return new Point(-1, -1);
-            return element.TransformToAncestor(System.Windows.Application.Current.MainWindow).Transform(new Point(0,0));
+            return element.TransformToAncestor(rootWindow).Transform(new Point(0,0)); 
         }
 
         public static double GetActualColumnWidth(Grid grid, int columnIndex) {

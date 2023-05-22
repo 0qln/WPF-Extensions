@@ -350,10 +350,9 @@ namespace WpfCustomControls {
             // var
             application = System.Windows.Application.Current;
             WindowChrome.SetWindowChrome(application.MainWindow, windowChrome);
-            applicationButtons = new();
+            applicationButtons = new(this);
             ApplicationButtons = applicationButtons;
-            application.MainWindow.SourceInitialized += (s, e) =>
-            {
+            application.MainWindow.SourceInitialized += (s, e) => {
                 IntPtr handle = (new WindowInteropHelper(application.MainWindow)).Handle;
                 HwndSource.FromHwnd(handle).AddHook(new HwndSourceHook(WindowProc));
             };
@@ -379,6 +378,9 @@ namespace WpfCustomControls {
 
             Helper.SetChildInGrid(mainGrid, clientButtonStackPanel, 0, 0);
             Helper.SetChildInGrid(mainGrid, applicationButtons.FrameworkElement, 0, 1);
+
+            // Set up Application Buttons
+
 
             // Set up Client Button Stack Panel
             clientButtonStackPanel.Background = Brushes.Transparent;
@@ -453,7 +455,6 @@ namespace WpfCustomControls {
                 }
             };
         }
-
         private void ActivateClientButton((Button, DropDownMenu) button, Action action) {
             ActivateClientButton(button);
             button.Item1.Click += (object sender, RoutedEventArgs e) => action();
@@ -547,7 +548,7 @@ namespace WpfCustomControls {
 
             return clientButtonsStyle;
         }
-        #region Fix the Winodw maximizing glitch
+        #region Fix for the Winodw maximizing glitch
         private static IntPtr WindowProc(IntPtr hwnd, int msg, IntPtr wParam, IntPtr lParam, ref bool handled) {
             switch (msg) {
                 case 0x0024:
@@ -660,6 +661,9 @@ namespace WpfCustomControls {
                         exitButton.Height = height;
                         minimizeButton.Height = height;
                         maximizeButton.Height = height;
+
+                        if (settingsButton != null)
+                            settingsButton.Height = height;
                     }
                 }
             }
@@ -668,10 +672,43 @@ namespace WpfCustomControls {
                 set {
                     if (value <= System.Windows.Application.Current.MainWindow.Width / 3) {
                         width = value;
+                        exitButton.Width = value;
+                        minimizeButton.Width = value;
+                        maximizeButton.Width = value;
+                        if (settingsButton != null)
+                            settingsButton.Width = value;
                     }
                 }
             }
+            public string? SettingsButtonImageSource {
+                get {
+                    if (settingsButton == null) return null;
+                    if ((settingsButton.Content as Border)!.Child == null) return null;
 
+                    return ((settingsButton.Content as Border)!.Child as System.Windows.Controls.Image)!.Source.ToString();
+                }
+                set {
+                    if (settingsButton == null) return;
+
+                    var imageContent = ((settingsButton.Content as Border)!.Child as System.Windows.Controls.Image)!;
+                    imageContent.Source = new BitmapImage(new Uri(value!));
+                }
+            }
+            public Thickness SettingsButtonImagePadding {
+                get {
+                    if (settingsButton == null) return new Thickness();
+
+                    return (settingsButton.Content as Border)!.Padding;
+                }
+                set {
+                    if (settingsButton == null) return;
+
+                    (settingsButton.Content as Border)!.Padding = value;
+                }
+            }
+
+
+            private Button settingsButton = new();
             private Button exitButton = new();
             private Button minimizeButton = new();
             private Button maximizeButton = new();
@@ -679,8 +716,8 @@ namespace WpfCustomControls {
             public Button MinimizeButton => minimizeButton;
             public Button MaximizeButton => maximizeButton;
 
-            private Grid grid = new();
-            public FrameworkElement FrameworkElement => grid;
+            private StackPanel stackPanel = new();
+            public FrameworkElement FrameworkElement => stackPanel;
 
             private Brush colorWhenButtonHover = Helper.StringToSolidColorBrush("#3d3d3d");
             private Brush color = Brushes.Transparent;
@@ -708,63 +745,76 @@ namespace WpfCustomControls {
             }
 
 
-            public ApplicationButtonCollection() {
-                exitButton.Style = ApplicationButtonStyle();
+            private WindowHandle windowHandle;
+
+
+            public ApplicationButtonCollection(WindowHandle windowHandle) {
+                this.windowHandle = windowHandle;
+
+
+                exitButton.Style = ButtonStyle();
                 exitButton.Content = "x";
                 exitButton.Click += Shutdown;
-                exitButton.MouseEnter += (object sender, MouseEventArgs e) => {
-                    exitButton.Background = colorWhenButtonHover;
-                };
-                exitButton.MouseLeave += (object sender, MouseEventArgs e) => {
-                    exitButton.Background = color;
-                };
+                exitButton.MouseEnter += (s, e) => { exitButton.Background = colorWhenButtonHover; };
+                exitButton.MouseLeave += (s, e) => { exitButton.Background = color; };
                 Helper.SetWindowChromActive(exitButton);
 
-                minimizeButton.Style = ApplicationButtonStyle();
+                minimizeButton.Style = ButtonStyle();
                 minimizeButton.Content = "-";
                 minimizeButton.Click += Minimize;
-                minimizeButton.MouseEnter += (object sender, MouseEventArgs e) => {
-                    minimizeButton.Background = colorWhenButtonHover;
-                };
-                minimizeButton.MouseLeave += (object sender, MouseEventArgs e) => {
-                    minimizeButton.Background = color;
-                };
+                minimizeButton.MouseEnter += (s, e) => { minimizeButton.Background = colorWhenButtonHover; };
+                minimizeButton.MouseLeave += (s, e) => { minimizeButton.Background = color; };
                 Helper.SetWindowChromActive(minimizeButton);
 
-                maximizeButton.Style = ApplicationButtonStyle();
+                maximizeButton.Style = ButtonStyle();
                 maximizeButton.Content = "□";
                 maximizeButton.Click += Maximize;
-                maximizeButton.MouseEnter += (object sender, MouseEventArgs e) => {
-                    maximizeButton.Background = colorWhenButtonHover;
-                };
-                maximizeButton.MouseLeave += (object sender, MouseEventArgs e) => {
-                    maximizeButton.Background = color;
-                };
+                maximizeButton.MouseEnter += (s, e) => { maximizeButton.Background = colorWhenButtonHover; };
+                maximizeButton.MouseLeave += (s, e) => { maximizeButton.Background = color; };
                 Helper.SetWindowChromActive(maximizeButton);
 
 
-                grid.VerticalAlignment = VerticalAlignment.Center;
-                grid.HorizontalAlignment = HorizontalAlignment.Right;
+                stackPanel.VerticalAlignment = VerticalAlignment.Center;
+                stackPanel.HorizontalAlignment = HorizontalAlignment.Right;
+                stackPanel.Orientation = Orientation.Horizontal;
 
-                var mainRow = new RowDefinition { Height = new GridLength(1, GridUnitType.Star) };
-                var minimizeColumn = new ColumnDefinition { Width = new GridLength(Width) };
-                var maximizeColumn = new ColumnDefinition { Width = new GridLength(Width) };
-                var exitColumn = new ColumnDefinition { Width = new GridLength(Width) };
-
-                grid.RowDefinitions.Add(mainRow);
-                grid.ColumnDefinitions.Add(minimizeColumn);
-                grid.ColumnDefinitions.Add(maximizeColumn);
-                grid.ColumnDefinitions.Add(exitColumn);
-
-                Helper.SetChildInGrid(grid, minimizeButton, 0, 0);
-                Helper.SetChildInGrid(grid, maximizeButton, 0, 1);
-                Helper.SetChildInGrid(grid, exitButton, 0, 2);
+                stackPanel.Children.Add(minimizeButton);
+                stackPanel.Children.Add(maximizeButton);
+                stackPanel.Children.Add(exitButton);
 
                 UpdateColors();
                 UpdateSize();
             }
 
-            public Style ApplicationButtonStyle() {
+
+            public void AddSettingsButton() {
+                windowHandle.mainGrid.ColumnDefinitions[1].Width = new GridLength(width * 4);
+
+                settingsButton.Style = ButtonStyle();
+                settingsButton.Click += Settings;
+                settingsButton.MouseEnter += (s, e) => { settingsButton.Background = colorWhenButtonHover; };
+                settingsButton.MouseLeave += (s, e) => { settingsButton.Background = color; };
+
+                var container = new Border {
+                    HorizontalAlignment = HorizontalAlignment.Stretch,
+                    VerticalAlignment = VerticalAlignment.Stretch,
+                };
+                settingsButton.Content = container;
+
+                var imageContent = new System.Windows.Controls.Image { 
+                    HorizontalAlignment = HorizontalAlignment.Center,
+                    VerticalAlignment = VerticalAlignment.Center
+                };
+                container.Child = imageContent;
+
+                Helper.SetWindowChromActive(settingsButton);
+                stackPanel.Children.Insert(0, settingsButton);
+
+                UpdateColors();
+                UpdateSize();
+            }
+
+            public Style ButtonStyle() {
                 // Create a new style for the button
                 Style style = new Style(typeof(Button));
                 style.Setters.Add(new Setter(Button.BackgroundProperty, color));
@@ -790,12 +840,14 @@ namespace WpfCustomControls {
 
                 return style;
             }
-
             
             public void SetWindowChromeActive() {
                 Helper.SetWindowChromActive(exitButton);
                 Helper.SetWindowChromActive(minimizeButton);
                 Helper.SetWindowChromActive(maximizeButton);
+                if (settingsButton != null) {
+                    Helper.SetWindowChromActive(settingsButton);
+                }
             }
 
             public void OverrideShutdown(Action action) {
@@ -809,6 +861,10 @@ namespace WpfCustomControls {
             public void OverrideMaximize(Action action) {
                 exitButton.Click -= Maximize;
                 exitButton.Click += (object sender, RoutedEventArgs e) => action();
+            }
+            public void OverrideSettings(Action action) {
+                settingsButton.Click -= Settings;
+                settingsButton.Click += (object sender, RoutedEventArgs e) => action();
             }
             private void Shutdown(object sender, RoutedEventArgs e) {
                 System.Windows.Application.Current.Shutdown();
@@ -830,6 +886,9 @@ namespace WpfCustomControls {
                 // Update Layout
                 System.Windows.Application.Current.MainWindow.UpdateLayout();
             }
+            private void Settings(object sender, RoutedEventArgs e) {
+
+            }
 
             public void UpdateSize() {
                 exitButton.Width = Width;
@@ -842,6 +901,11 @@ namespace WpfCustomControls {
 
                 maximizeButton.Width = Width;
                 maximizeButton.Height = Height;
+
+                if (settingsButton != null) {
+                    settingsButton.Width = Width;
+                    settingsButton.Height = Height;
+                }
             }
             public void UpdateColors() {
                 exitButton.Background = color;
@@ -857,6 +921,12 @@ namespace WpfCustomControls {
                 maximizeButton.Background = color;
                 maximizeButton.Foreground = symbolColor;
                 Helper.UpdateButtonHoverColor(maximizeButton, colorWhenButtonHover);
+
+                if (settingsButton != null) {
+                    settingsButton.Background = color;
+                    settingsButton.Foreground = symbolColor;
+                    Helper.UpdateButtonHoverColor(settingsButton, colorWhenButtonHover);
+                }
             }
         }
     }
